@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Terminal Window / Console -->
+    <path
+        android:fillColor="#212121"
+        android:pathData="M32,30h44v18h-44z" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M32,30h44v18h-44z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2" />
+
+    <!-- Prompt inside the console -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M36,35l4,4l-4,4"
+        android:strokeColor="#4CAF50"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M44,43h6"
+        android:strokeColor="#4CAF50"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- D-pad / Remote buttons -->
+    <!-- Center point -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M53,70a1,1 0 1,1 2,0a1,1 0 1,1 -2,0" />
+
+    <!-- Up arrow -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,58l3,4h-6z" />
+    <!-- Down arrow -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,82l3,-4h-6z" />
+    <!-- Left arrow -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,70l4,3v-6z" />
+    <!-- Right arrow -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,70l-4,3v-6z" />
+
+</vector>
