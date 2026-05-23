@@ -1,26 +1,34 @@
 package org.acoustixaudio.opiqo.remotecontroloverssh.ui.dashboard
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import org.acoustixaudio.opiqo.remotecontroloverssh.data.AppDatabase
+import org.acoustixaudio.opiqo.remotecontroloverssh.data.AppRepository
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteCommand
+import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteControlConfig
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteProfile
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.SshProfile
-import org.acoustixaudio.opiqo.remotecontroloverssh.ssh.SshManager
+import org.acoustixaudio.opiqo.remotecontroloverssh.ssh.SshClient
+import org.acoustixaudio.opiqo.remotecontroloverssh.ssh.SshResult
 
-class DashboardViewModel(context: Context, private val remoteProfileId: Long) : ViewModel() {
-    private val db = AppDatabase.getDatabase(context)
-    private val remoteProfileDao = db.remoteProfileDao()
-    private val sshDao = db.sshDao()
-    private val commandDao = db.remoteCommandDao()
-    private val sshManager = SshManager()
-
+class DashboardViewModel(
+    private val repository: AppRepository,
+    private val sshClient: SshClient,
+    private val remoteProfileId: Long
+) : ViewModel() {
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     private val slider1Flow = MutableSharedFlow<Int>()
     private val slider2Flow = MutableSharedFlow<Int>()
@@ -32,39 +40,51 @@ class DashboardViewModel(context: Context, private val remoteProfileId: Long) : 
 
     private fun loadData() {
         viewModelScope.launch {
-            val remoteProfile = remoteProfileDao.getRemoteProfileById(remoteProfileId) ?: return@launch
-            val sshProfile = remoteProfile.sshProfileId?.let { sshDao.getProfileById(it) }
-            val commands = commandDao.getCommandsForProfile(remoteProfileId).first()
+            val dashboardData = repository.getDashboardData(remoteProfileId)
+            if (dashboardData == null) {
+                _uiState.update {
+                    it.copy(connectionStatus = "Remote profile unavailable")
+                }
+                _messages.emit("The selected remote profile could not be loaded.")
+                return@launch
+            }
 
             _uiState.update { it.copy(
-                remoteProfile = remoteProfile,
-                sshProfile = sshProfile,
-                commands = commands.associateBy { c -> c.buttonIdentifier }
+                remoteProfile = dashboardData.remoteProfile,
+                sshProfile = dashboardData.sshProfile,
+                commands = dashboardData.commands.associateBy { command -> command.buttonIdentifier },
+                connectionStatus = if (dashboardData.sshProfile == null) "No SSH profile selected" else "Disconnected"
             ) }
 
-            sshProfile?.let { connectSsh(it) }
+            dashboardData.sshProfile?.let { connectSsh(it) }
         }
     }
 
     private suspend fun connectSsh(profile: SshProfile) {
-        _uiState.update { it.copy(connectionStatus = "Connecting...") }
-        val success = sshManager.connect(profile)
-        _uiState.update { it.copy(
-            connectionStatus = if (success) "Connected" else "Connection Failed",
-            isConnected = success
-        ) }
+        _uiState.update { it.copy(connectionStatus = "Connecting...", isConnected = false) }
+        when (val result = sshClient.connect(profile)) {
+            is SshResult.Success -> _uiState.update {
+                it.copy(connectionStatus = "Connected", isConnected = true)
+            }
+            is SshResult.Error -> {
+                _uiState.update {
+                    it.copy(connectionStatus = result.message, isConnected = false)
+                }
+                _messages.emit(result.message)
+            }
+        }
     }
 
     @OptIn(FlowPreview::class)
     private fun setupSliderDebounce() {
         viewModelScope.launch {
             slider1Flow.debounce(100L).collect { value ->
-                executeCommandWithVal("SLIDER_1", value)
+                executeSliderCommand(RemoteControlConfig.SLIDER_1, value)
             }
         }
         viewModelScope.launch {
             slider2Flow.debounce(100L).collect { value ->
-                executeCommandWithVal("SLIDER_2", value)
+                executeSliderCommand(RemoteControlConfig.SLIDER_2, value)
             }
         }
     }
@@ -81,21 +101,34 @@ class DashboardViewModel(context: Context, private val remoteProfileId: Long) : 
 
     fun onButtonClick(buttonId: String) {
         viewModelScope.launch {
-            val cmdTemplate = _uiState.value.commands[buttonId]?.commandString ?: return@launch
-            sshManager.executeCommand(cmdTemplate)
+            val command = _uiState.value.commands[buttonId]
+                ?.commandString
+                ?.takeIf { it.isNotBlank() }
+                ?: return@launch
+            executeCommand(command)
         }
     }
 
-    private suspend fun executeCommandWithVal(buttonId: String, value: Int) {
-        val cmdTemplate = _uiState.value.commands[buttonId]?.commandString ?: return
-        val finalCmd = cmdTemplate.replace("%val%", value.toString())
-        sshManager.executeCommand(finalCmd)
+    private suspend fun executeSliderCommand(sliderId: String, value: Int) {
+        val command = RemoteControlConfig.resolveSliderCommand(
+            commands = _uiState.value.commands,
+            sliderId = sliderId,
+            step = value
+        ) ?: return
+        executeCommand(command)
+    }
+
+    private suspend fun executeCommand(command: String) {
+        when (val result = sshClient.executeCommand(command)) {
+            is SshResult.Success -> Unit
+            is SshResult.Error -> _messages.emit(result.message)
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
         viewModelScope.launch {
-            sshManager.disconnect()
+            sshClient.disconnect()
         }
     }
 }

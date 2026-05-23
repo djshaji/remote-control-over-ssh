@@ -10,5 +10,6 @@ data class SshProfile(
     val host: String,
     val port: Int = 22,
     val username: String,
-    val privateKeyPath: String? = null
+    val privateKeyPath: String? = null,
+    val hostKeyFingerprint: String? = null
 )

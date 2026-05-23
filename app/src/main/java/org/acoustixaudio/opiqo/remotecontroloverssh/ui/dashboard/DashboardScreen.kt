@@ -19,6 +19,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.collectLatest
+import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteCommand
+import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteControlConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,8 +30,16 @@ fun DashboardScreen(
     onBackClick: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(viewModel) {
+        viewModel.messages.collectLatest { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { 
@@ -58,7 +69,11 @@ fun DashboardScreen(
                 label = "Volume Slider (0 to 10)",
                 value = uiState.slider1Value,
                 onValueChange = { viewModel.onSlider1Change(it) },
-                commandPreview = uiState.commands["SLIDER_1"]?.commandString ?: ""
+                commandPreview = sliderCommandPreview(
+                    commands = uiState.commands,
+                    sliderId = RemoteControlConfig.SLIDER_1,
+                    value = uiState.slider1Value
+                )
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -66,11 +81,11 @@ fun DashboardScreen(
             // D-Pad
             Text("Five-Way Keys", style = MaterialTheme.typography.titleSmall)
             FiveWayDPad(
-                onUp = { viewModel.onButtonClick("DPAD_UP") },
-                onDown = { viewModel.onButtonClick("DPAD_DOWN") },
-                onLeft = { viewModel.onButtonClick("DPAD_LEFT") },
-                onRight = { viewModel.onButtonClick("DPAD_RIGHT") },
-                onSelect = { viewModel.onButtonClick("DPAD_SELECT") }
+                onUp = { viewModel.onButtonClick(RemoteControlConfig.DPAD_UP) },
+                onDown = { viewModel.onButtonClick(RemoteControlConfig.DPAD_DOWN) },
+                onLeft = { viewModel.onButtonClick(RemoteControlConfig.DPAD_LEFT) },
+                onRight = { viewModel.onButtonClick(RemoteControlConfig.DPAD_RIGHT) },
+                onSelect = { viewModel.onButtonClick(RemoteControlConfig.DPAD_SELECT) }
             )
 
             // Back/Home Buttons
@@ -79,14 +94,14 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 DashboardButton(
-                    icon = Icons.Default.ArrowBack,
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
                     label = "Back",
-                    onClick = { viewModel.onButtonClick("BTN_BACK") }
+                    onClick = { viewModel.onButtonClick(RemoteControlConfig.BTN_BACK) }
                 )
                 DashboardButton(
                     icon = Icons.Default.Home,
                     label = "Home",
-                    onClick = { viewModel.onButtonClick("BTN_HOME") }
+                    onClick = { viewModel.onButtonClick(RemoteControlConfig.BTN_HOME) }
                 )
             }
 
@@ -97,11 +112,21 @@ fun DashboardScreen(
                 label = "Brightness",
                 value = uiState.slider2Value,
                 onValueChange = { viewModel.onSlider2Change(it) },
-                commandPreview = uiState.commands["SLIDER_2"]?.commandString ?: ""
+                commandPreview = sliderCommandPreview(
+                    commands = uiState.commands,
+                    sliderId = RemoteControlConfig.SLIDER_2,
+                    value = uiState.slider2Value
+                )
             )
         }
     }
 }
+
+private fun sliderCommandPreview(
+    commands: Map<String, RemoteCommand>,
+    sliderId: String,
+    value: Int
+): String = RemoteControlConfig.resolveSliderCommand(commands, sliderId, value).orEmpty()
 
 @Composable
 fun RemoteSlider(
@@ -135,7 +160,7 @@ fun RemoteSlider(
         }
         if (commandPreview.isNotEmpty()) {
             Text(
-                "command: ${commandPreview.replace("%val%", value.toString())}",
+                "command: $commandPreview",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(top = 4.dp)

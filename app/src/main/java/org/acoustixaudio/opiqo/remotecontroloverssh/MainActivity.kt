@@ -43,6 +43,8 @@ fun MainApp() {
     val backStack = rememberNavBackStack(NavRoute.SshProfiles)
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val application = LocalContext.current.applicationContext as RemoteControlApplication
+    val appContainer = application.appContainer
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -87,27 +89,37 @@ fun MainApp() {
             }
         }
     ) {
-    val context = LocalContext.current.applicationContext
     NavDisplay(
         backStack = backStack,
         onBack = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) },
         entryProvider = entryProvider {
             entry<NavRoute.SshProfiles> {
                 SshProfilesScreen(
-                    viewModel = viewModel { SshProfilesViewModel(context) },
+                    viewModel = viewModel { SshProfilesViewModel(appContainer.repository) },
                     onOpenDrawer = { scope.launch { drawerState.open() } }
                 )
             }
             entry<NavRoute.RemoteProfiles> {
                 RemoteProfilesScreen(
-                    viewModel = viewModel { RemoteProfilesViewModel(context) },
+                    viewModel = viewModel {
+                        RemoteProfilesViewModel(
+                            repository = appContainer.repository,
+                            builtInRemoteProfilesStore = appContainer.builtInRemoteProfilesStore
+                        )
+                    },
                     onOpenDrawer = { scope.launch { drawerState.open() } },
                     onRemoteClick = { id -> backStack.add(NavRoute.Dashboard(id)) }
                 )
             }
                 entry<NavRoute.Dashboard> { route ->
                     DashboardScreen(
-                        viewModel = viewModel { DashboardViewModel(context, route.remoteProfileId) },
+                        viewModel = viewModel {
+                            DashboardViewModel(
+                                repository = appContainer.repository,
+                                sshClient = appContainer.createSshClient(),
+                                remoteProfileId = route.remoteProfileId
+                            )
+                        },
                         onBackClick = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) }
                     )
                 }

@@ -20,6 +20,6 @@ import androidx.room.PrimaryKey
 data class RemoteCommand(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val remoteProfileId: Long,
-    val buttonIdentifier: String, // e.g., "SLIDER_1", "DPAD_UP"
-    val commandString: String // e.g., "amixer set Master %val%+"
+    val buttonIdentifier: String, // e.g., "SLIDER_1_STEP_0", "DPAD_UP"
+    val commandString: String
 )
