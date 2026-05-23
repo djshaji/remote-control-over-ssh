@@ -2,26 +2,25 @@ package org.acoustixaudio.opiqo.remotecontroloverssh.ui.dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.collectLatest
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteCommand
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteControlConfig
+import org.acoustixaudio.opiqo.remotecontroloverssh.ui.components.ConnectionStatusChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,9 +43,13 @@ fun DashboardScreen(
             TopAppBar(
                 title = { 
                     Text(
-                        "${uiState.remoteProfile?.name ?: "Remote"} (${uiState.connectionStatus})",
+                        uiState.remoteProfile?.name ?: "Remote",
                         style = MaterialTheme.typography.titleMedium
                     ) 
+                },
+                actions = {
+                    ConnectionStatusChip(isConnected = uiState.isConnected)
+                    Spacer(Modifier.width(8.dp))
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
@@ -64,11 +67,28 @@ fun DashboardScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            ConnectionControls(
+                status = uiState.connectionStatus,
+                isConnected = uiState.isConnected,
+                isConnecting = uiState.isConnecting,
+                onConnectClick = viewModel::onConnectClick,
+                onDisconnectClick = viewModel::onDisconnectClick
+            )
+
+            if (!uiState.isConnected) {
+                Text(
+                    text = "Tap Connect to enable remote controls.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             // Slider 1
             RemoteSlider(
                 label = "Volume Slider (0 to 10)",
                 value = uiState.slider1Value,
                 onValueChange = { viewModel.onSlider1Change(it) },
+                enabled = uiState.isConnected,
                 commandPreview = sliderCommandPreview(
                     commands = uiState.commands,
                     sliderId = RemoteControlConfig.SLIDER_1,
@@ -81,6 +101,7 @@ fun DashboardScreen(
             // D-Pad
             Text("Five-Way Keys", style = MaterialTheme.typography.titleSmall)
             FiveWayDPad(
+                enabled = uiState.isConnected,
                 onUp = { viewModel.onButtonClick(RemoteControlConfig.DPAD_UP) },
                 onDown = { viewModel.onButtonClick(RemoteControlConfig.DPAD_DOWN) },
                 onLeft = { viewModel.onButtonClick(RemoteControlConfig.DPAD_LEFT) },
@@ -96,11 +117,13 @@ fun DashboardScreen(
                 DashboardButton(
                     icon = Icons.AutoMirrored.Filled.ArrowBack,
                     label = "Back",
+                    enabled = uiState.isConnected,
                     onClick = { viewModel.onButtonClick(RemoteControlConfig.BTN_BACK) }
                 )
                 DashboardButton(
                     icon = Icons.Default.Home,
                     label = "Home",
+                    enabled = uiState.isConnected,
                     onClick = { viewModel.onButtonClick(RemoteControlConfig.BTN_HOME) }
                 )
             }
@@ -112,12 +135,55 @@ fun DashboardScreen(
                 label = "Brightness",
                 value = uiState.slider2Value,
                 onValueChange = { viewModel.onSlider2Change(it) },
+                enabled = uiState.isConnected,
                 commandPreview = sliderCommandPreview(
                     commands = uiState.commands,
                     sliderId = RemoteControlConfig.SLIDER_2,
                     value = uiState.slider2Value
                 )
             )
+        }
+    }
+}
+
+@Composable
+private fun ConnectionControls(
+    status: String,
+    isConnected: Boolean,
+    isConnecting: Boolean,
+    onConnectClick: () -> Unit,
+    onDisconnectClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                AssistChip(
+                    onClick = {},
+                    enabled = false,
+                    label = { Text(if (isConnected) "Connected" else "Disconnected") }
+                )
+                Text(status, style = MaterialTheme.typography.bodySmall)
+            }
+
+            if (isConnected) {
+                OutlinedButton(onClick = onDisconnectClick) {
+                    Text("Disconnect")
+                }
+            } else {
+                Button(enabled = !isConnecting, onClick = onConnectClick) {
+                    Text(if (isConnecting) "Connecting..." else "Connect")
+                }
+            }
         }
     }
 }
@@ -133,6 +199,7 @@ fun RemoteSlider(
     label: String,
     value: Int,
     onValueChange: (Int) -> Unit,
+    enabled: Boolean,
     commandPreview: String
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -147,6 +214,7 @@ fun RemoteSlider(
         Slider(
             value = value.toFloat(),
             onValueChange = { onValueChange(it.toInt()) },
+            enabled = enabled,
             valueRange = 0f..10f,
             steps = 9
         )
@@ -171,6 +239,7 @@ fun RemoteSlider(
 
 @Composable
 fun FiveWayDPad(
+    enabled: Boolean,
     onUp: () -> Unit,
     onDown: () -> Unit,
     onLeft: () -> Unit,
@@ -189,6 +258,7 @@ fun FiveWayDPad(
             icon = Icons.Default.KeyboardArrowUp,
             label = "Up",
             modifier = Modifier.align(Alignment.TopCenter),
+            enabled = enabled,
             onClick = onUp
         )
         // Down
@@ -196,25 +266,29 @@ fun FiveWayDPad(
             icon = Icons.Default.KeyboardArrowDown,
             label = "Down",
             modifier = Modifier.align(Alignment.BottomCenter),
+            enabled = enabled,
             onClick = onDown
         )
         // Left
         DPadSection(
-            icon = Icons.Default.KeyboardArrowLeft,
+            icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
             label = "Left",
             modifier = Modifier.align(Alignment.CenterStart),
+            enabled = enabled,
             onClick = onLeft
         )
         // Right
         DPadSection(
-            icon = Icons.Default.KeyboardArrowRight,
+            icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             label = "Right",
             modifier = Modifier.align(Alignment.CenterEnd),
+            enabled = enabled,
             onClick = onRight
         )
         // Select
         Surface(
             onClick = onSelect,
+            enabled = enabled,
             modifier = Modifier
                 .size(100.dp)
                 .clip(CircleShape),
@@ -237,12 +311,13 @@ fun DPadSection(
     icon: ImageVector,
     label: String,
     modifier: Modifier = Modifier,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     Box(
         modifier = modifier
             .size(90.dp)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -261,11 +336,13 @@ fun DPadSection(
 fun DashboardButton(
     icon: ImageVector,
     label: String,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(
             onClick = onClick,
+            enabled = enabled,
             modifier = Modifier
                 .size(64.dp)
                 .clip(CircleShape)

@@ -95,7 +95,12 @@ fun MainApp() {
         entryProvider = entryProvider {
             entry<NavRoute.SshProfiles> {
                 SshProfilesScreen(
-                    viewModel = viewModel { SshProfilesViewModel(appContainer.repository) },
+                    viewModel = viewModel {
+                        SshProfilesViewModel(
+                            repository = appContainer.repository,
+                            sshClientFactory = appContainer::createSshClient
+                        )
+                    },
                     onOpenDrawer = { scope.launch { drawerState.open() } }
                 )
             }

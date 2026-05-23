@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.SshProfile
+import org.acoustixaudio.opiqo.remotecontroloverssh.ssh.SshResult
+import org.acoustixaudio.opiqo.remotecontroloverssh.ui.components.ConnectionStatusChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,6 +32,10 @@ fun SshProfilesScreen(
     onOpenDrawer: () -> Unit
 ) {
     val profiles by viewModel.profiles.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val connectedAlias = profiles
+        .firstOrNull { it.id == connectionState.connectedProfileId }
+        ?.alias
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showAddDialog by remember { mutableStateOf(false) }
@@ -47,6 +53,10 @@ fun SshProfilesScreen(
         topBar = {
             TopAppBar(
                 title = { Text("SSH Connections") },
+                actions = {
+                    ConnectionStatusChip(isConnected = connectedAlias != null)
+                    Spacer(Modifier.width(8.dp))
+                },
                 navigationIcon = {
                     IconButton(onClick = onOpenDrawer) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
@@ -69,9 +79,44 @@ fun SshProfilesScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            connectedAlias?.let { alias ->
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Text(
+                            text = "Connected to: $alias",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
+                    }
+                }
+            }
+
+            if (connectionState.connectedProfileId == null) {
+                item {
+                    Text(
+                        text = "Tap Connect on an SSH profile to start a session.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             items(profiles) { profile ->
                 SshProfileItem(
                     profile = profile,
+                    isConnected = connectionState.connectedProfileId == profile.id,
+                    isConnecting = connectionState.isConnecting,
+                    onConnect = { viewModel.connectProfile(profile) },
+                    onDisconnect = { viewModel.disconnectProfile() },
+                    onClick = {
+                        editingProfile = profile
+                        showAddDialog = true
+                    },
                     onEdit = {
                         editingProfile = profile
                         showAddDialog = true
@@ -90,6 +135,9 @@ fun SshProfilesScreen(
             onDismiss = {
                 showAddDialog = false
                 editingProfile = null
+            },
+            onFetchFingerprint = { host, port ->
+                viewModel.fetchServerFingerprint(host, port)
             },
             onSave = { existingProfile, alias, host, port, username, keyUri, hostKeyFingerprint, context ->
                 scope.launch {
@@ -113,11 +161,44 @@ fun SshProfilesScreen(
             }
         )
     }
+
+    connectionState.pendingFingerprintReplacement?.let { replacement ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissFingerprintReplacementPrompt,
+            title = { Text("Replace fingerprint?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Connection to ${replacement.profileAlias} failed due to host key mismatch.")
+                    Text(
+                        text = replacement.fingerprint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Text("Replace saved fingerprint and reconnect now?")
+                }
+            },
+            confirmButton = {
+                Button(onClick = viewModel::replaceFingerprintAndReconnect) {
+                    Text("Replace & Connect")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissFingerprintReplacementPrompt) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 fun SshProfileItem(
     profile: SshProfile,
+    isConnected: Boolean,
+    isConnecting: Boolean,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -125,47 +206,78 @@ fun SshProfileItem(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .padding(16.dp)
                 .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4CAF50)) // Green status dot
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(profile.alias, style = MaterialTheme.typography.titleMedium)
-                Text("${profile.username}@${profile.host}:${profile.port}", style = MaterialTheme.typography.bodySmall)
-            }
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Options")
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(if (isConnected) Color(0xFF4CAF50) else Color(0xFF9E9E9E))
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(profile.alias, style = MaterialTheme.typography.titleMedium)
+                    Text("${profile.username}@${profile.host}:${profile.port}", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        if (isConnected) "Connected" else "Disconnected",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Edit") },
-                        onClick = {
-                            menuExpanded = false
-                            onEdit()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Delete") },
-                        onClick = {
-                            menuExpanded = false
-                            onDelete()
-                        }
-                    )
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Options")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            }
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (isConnected) {
+                    OutlinedButton(
+                        enabled = !isConnecting,
+                        onClick = onDisconnect
+                    ) {
+                        Text("Disconnect")
+                    }
+                } else {
+                    Button(
+                        enabled = !isConnecting,
+                        onClick = onConnect
+                    ) {
+                        Text(if (isConnecting) "Connecting..." else "Connect")
+                    }
                 }
             }
         }
@@ -177,6 +289,7 @@ fun SshProfileItem(
 fun AddSshProfileDialog(
     existingProfile: SshProfile? = null,
     onDismiss: () -> Unit,
+    onFetchFingerprint: suspend (String, Int) -> SshResult<String>,
     onSave: suspend (SshProfile?, String, String, Int, String, Uri?, String, android.content.Context) -> Unit
 ) {
     var alias by remember(existingProfile) { mutableStateOf(existingProfile?.alias.orEmpty()) }
@@ -188,6 +301,9 @@ fun AddSshProfileDialog(
     var keyName by remember(existingProfile) { mutableStateOf(if (existingProfile?.privateKeyPath != null) "Current key" else "Browse...") }
     var showValidationErrors by remember(existingProfile) { mutableStateOf(false) }
     var isSaving by remember(existingProfile) { mutableStateOf(false) }
+    var isFetchingFingerprint by remember(existingProfile) { mutableStateOf(false) }
+    var fetchFingerprintError by remember(existingProfile) { mutableStateOf<String?>(null) }
+    var pendingFetchedFingerprint by remember(existingProfile) { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -260,11 +376,50 @@ fun AddSshProfileDialog(
                     placeholder = { Text("SHA256:... or MD5:aa:bb:...") },
                     isError = showValidationErrors && validationErrors.fingerprint != null,
                     supportingText = {
-                        if (showValidationErrors && validationErrors.fingerprint != null) {
-                            Text(validationErrors.fingerprint)
+                        when {
+                            fetchFingerprintError != null -> Text(fetchFingerprintError!!)
+                            showValidationErrors && validationErrors.fingerprint != null -> {
+                                Text(validationErrors.fingerprint)
+                            }
                         }
                     }
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        enabled = !isFetchingFingerprint,
+                        onClick = {
+                            fetchFingerprintError = null
+                            val trimmedHost = host.trim()
+                            val parsedPort = port.toIntOrNull()
+                            if (trimmedHost.isBlank()) {
+                                fetchFingerprintError = "Enter a host before fetching the fingerprint."
+                                return@TextButton
+                            }
+                            if (parsedPort == null || parsedPort !in 1..65535) {
+                                fetchFingerprintError = "Enter a valid port before fetching the fingerprint."
+                                return@TextButton
+                            }
+
+                            isFetchingFingerprint = true
+                            scope.launch {
+                                when (val result = onFetchFingerprint(trimmedHost, parsedPort)) {
+                                    is SshResult.Success -> {
+                                        pendingFetchedFingerprint = result.value
+                                    }
+                                    is SshResult.Error -> {
+                                        fetchFingerprintError = result.message
+                                    }
+                                }
+                                isFetchingFingerprint = false
+                            }
+                        }
+                    ) {
+                        Text(if (isFetchingFingerprint) "Fetching..." else "Fetch Fingerprint")
+                    }
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("SSH Key: $keyName", modifier = Modifier.weight(1f))
@@ -314,6 +469,30 @@ fun AddSshProfileDialog(
             }
         }
     )
+
+    pendingFetchedFingerprint?.let { fingerprint ->
+        AlertDialog(
+            onDismissRequest = { pendingFetchedFingerprint = null },
+            title = { Text("Use fetched fingerprint?") },
+            text = { Text(fingerprint) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        hostKeyFingerprint = fingerprint
+                        fetchFingerprintError = null
+                        pendingFetchedFingerprint = null
+                    }
+                ) {
+                    Text("Use Fingerprint")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingFetchedFingerprint = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable

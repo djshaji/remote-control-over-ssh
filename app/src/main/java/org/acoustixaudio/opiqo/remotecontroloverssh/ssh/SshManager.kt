@@ -3,14 +3,47 @@ package org.acoustixaudio.opiqo.remotecontroloverssh.ssh
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.transport.verification.FingerprintVerifier
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.SshProfile
 import java.io.File
 import java.io.IOException
 import java.security.GeneralSecurityException
+import java.security.MessageDigest
+import java.security.PublicKey
+import java.util.Base64
 
 class SshManager : SshClient {
     private var client: SSHClient? = null
+
+    override suspend fun fetchServerFingerprint(host: String, port: Int): SshResult<String> = withContext(Dispatchers.IO) {
+        val sshClient = SSHClient()
+        var serverKey: PublicKey? = null
+        try {
+            sshClient.addHostKeyVerifier(
+                object : HostKeyVerifier {
+                    override fun verify(hostname: String, port: Int, key: PublicKey): Boolean {
+                        serverKey = key
+                        return true
+                    }
+
+                    override fun findExistingAlgorithms(hostname: String, port: Int): MutableList<String> {
+                        return mutableListOf()
+                    }
+                }
+            )
+            sshClient.connect(host, port)
+            val capturedKey = serverKey ?: return@withContext SshResult.Error("The server did not present a host key.")
+            sshClient.closeQuietly()
+            SshResult.Success(calculateSha256Fingerprint(capturedKey))
+        } catch (e: IOException) {
+            sshClient.closeQuietly()
+            SshResult.Error(e.message ?: "Unable to fetch the server fingerprint.")
+        } catch (e: GeneralSecurityException) {
+            sshClient.closeQuietly()
+            SshResult.Error(e.message ?: "Unable to calculate the server fingerprint.")
+        }
+    }
 
     override suspend fun connect(profile: SshProfile): SshResult<Unit> = withContext(Dispatchers.IO) {
         disconnect()
@@ -42,7 +75,21 @@ class SshManager : SshClient {
             SshResult.Error("Invalid host fingerprint format. Use SHA256:... or MD5:... .")
         } catch (e: IOException) {
             sshClient.closeQuietly()
-            SshResult.Error(e.message ?: "Unable to connect to the SSH server.")
+            val message = e.message.orEmpty()
+            if (message.contains("verify host key", ignoreCase = true)) {
+                val currentFingerprint = fetchCurrentServerFingerprint(profile.host, profile.port)
+                val mismatchDetail = if (currentFingerprint != null) {
+                    "Server now presents $currentFingerprint."
+                } else {
+                    "Could not fetch the current server fingerprint automatically."
+                }
+                SshResult.Error(
+                    "Host key fingerprint mismatch. Saved fingerprint is $fingerprint. $mismatchDetail " +
+                        "Update the SSH profile fingerprint to continue."
+                )
+            } else {
+                SshResult.Error(message.ifBlank { "Unable to connect to the SSH server." })
+            }
         } catch (e: GeneralSecurityException) {
             sshClient.closeQuietly()
             SshResult.Error(e.message ?: "SSH authentication failed.")
@@ -90,6 +137,19 @@ class SshManager : SshClient {
         try {
             disconnect()
         } catch (_: IOException) {
+        }
+    }
+
+    private fun calculateSha256Fingerprint(publicKey: PublicKey): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(publicKey.encoded)
+        val encoded = Base64.getEncoder().withoutPadding().encodeToString(digest)
+        return "SHA256:$encoded"
+    }
+
+    private suspend fun fetchCurrentServerFingerprint(host: String, port: Int): String? {
+        return when (val result = fetchServerFingerprint(host, port)) {
+            is SshResult.Success -> result.value
+            is SshResult.Error -> null
         }
     }
 }

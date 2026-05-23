@@ -8,6 +8,7 @@ sealed interface SshResult<out T> {
 }
 
 interface SshClient {
+    suspend fun fetchServerFingerprint(host: String, port: Int): SshResult<String>
     suspend fun connect(profile: SshProfile): SshResult<Unit>
     suspend fun executeCommand(command: String): SshResult<String>
     suspend fun disconnect(): SshResult<Unit>

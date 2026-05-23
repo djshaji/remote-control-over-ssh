@@ -27,7 +27,7 @@ class DashboardViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun sliderChanges_areDebouncedAndExecuteLatestCommand() = runTest {
+    fun sliderChanges_areDebouncedAndExecuteLatestCommand_afterConnecting() = runTest {
         val fakeRepository = FakeAppRepository(
             dashboardData = DashboardData(
                 remoteProfile = RemoteProfile(id = 1, name = "Remote", sshProfileId = 2),
@@ -62,6 +62,10 @@ class DashboardViewModelTest {
             remoteProfileId = 1
         )
 
+        advanceUntilIdle()
+        assertTrue(!viewModel.uiState.value.isConnected)
+
+        viewModel.onConnectClick()
         advanceUntilIdle()
         assertTrue(viewModel.uiState.value.isConnected)
 
@@ -108,6 +112,10 @@ class DashboardViewModelTest {
         val executedCommands = mutableListOf<String>()
 
         override suspend fun connect(profile: SshProfile): SshResult<Unit> = SshResult.Success(Unit)
+
+        override suspend fun fetchServerFingerprint(host: String, port: Int): SshResult<String> {
+            return SshResult.Success("SHA256:test")
+        }
 
         override suspend fun executeCommand(command: String): SshResult<String> {
             executedCommands += command
