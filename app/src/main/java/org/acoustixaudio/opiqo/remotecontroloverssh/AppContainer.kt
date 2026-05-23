@@ -11,10 +11,11 @@ import org.acoustixaudio.opiqo.remotecontroloverssh.ssh.SshManager
 
 class AppContainer(context: Context) {
     private val database = AppDatabase.getDatabase(context)
+    private val sharedSshClient: SshClient = SshManager()
 
     val repository: AppRepository = RoomAppRepository(database)
     val builtInRemoteProfilesStore: BuiltInRemoteProfilesStore =
         AssetBuiltInRemoteProfilesStore(context.assets)
 
-    fun createSshClient(): SshClient = SshManager()
+    fun createSshClient(): SshClient = sharedSshClient
 }

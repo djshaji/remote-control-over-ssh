@@ -53,15 +53,16 @@ class DashboardViewModel(
                 remoteProfile = dashboardData.remoteProfile,
                 sshProfile = dashboardData.sshProfile,
                 commands = dashboardData.commands.associateBy { command -> command.buttonIdentifier },
-                connectionStatus = initialConnectionStatus(dashboardData.sshProfile),
-                isConnected = false,
+                connectionStatus = initialConnectionStatus(dashboardData.sshProfile, sshClient.isConnected()),
+                isConnected = sshClient.isConnected(),
                 isConnecting = false
             ) }
         }
     }
 
-    private fun initialConnectionStatus(profile: SshProfile?): String {
+    private fun initialConnectionStatus(profile: SshProfile?, alreadyConnected: Boolean = false): String {
         if (profile == null) return "No SSH profile selected"
+        if (alreadyConnected) return "Connected"
         if (profile.hostKeyFingerprint.isNullOrBlank()) return "SSH profile missing host fingerprint"
         if (profile.privateKeyPath.isNullOrBlank()) return "SSH profile missing private key"
         return "Disconnected"
@@ -99,7 +100,7 @@ class DashboardViewModel(
             when (val result = sshClient.disconnect()) {
                 is SshResult.Success -> {
                     _uiState.update {
-                        it.copy(connectionStatus = initialConnectionStatus(it.sshProfile), isConnected = false, isConnecting = false)
+                        it.copy(connectionStatus = initialConnectionStatus(it.sshProfile, alreadyConnected = false), isConnected = false, isConnecting = false)
                     }
                 }
                 is SshResult.Error -> {

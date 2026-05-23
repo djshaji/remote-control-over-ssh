@@ -130,8 +130,33 @@ class SshProfilesViewModel(
         }
     }
 
+    fun refetchFingerprintReplacement() {
+        viewModelScope.launch {
+            val replacement = _connectionState.value.pendingFingerprintReplacement ?: return@launch
+            _connectionState.value = _connectionState.value.copy(isFetchingReplacementFingerprint = true)
+
+            when (val result = fetchServerFingerprint(replacement.host, replacement.port)) {
+                is SshResult.Success -> {
+                    _connectionState.value = _connectionState.value.copy(
+                        isFetchingReplacementFingerprint = false,
+                        pendingFingerprintReplacement = replacement.copy(fingerprint = result.value)
+                    )
+                    _messages.emit("Fetched latest server fingerprint.")
+                }
+
+                is SshResult.Error -> {
+                    _connectionState.value = _connectionState.value.copy(isFetchingReplacementFingerprint = false)
+                    _messages.emit(result.message)
+                }
+            }
+        }
+    }
+
     fun dismissFingerprintReplacementPrompt() {
-        _connectionState.value = _connectionState.value.copy(pendingFingerprintReplacement = null)
+        _connectionState.value = _connectionState.value.copy(
+            pendingFingerprintReplacement = null,
+            isFetchingReplacementFingerprint = false
+        )
     }
 
     fun disconnectProfile() {
@@ -177,9 +202,7 @@ class SshProfilesViewModel(
         profile: SshProfile,
         connectErrorMessage: String
     ): FingerprintReplacementPrompt? {
-        if (!connectErrorMessage.contains("fingerprint mismatch", ignoreCase = true) &&
-            !connectErrorMessage.contains("verify host key", ignoreCase = true)
-        ) {
+        if (!isFingerprintVerificationFailure(connectErrorMessage)) {
             return null
         }
 
@@ -191,6 +214,9 @@ class SshProfilesViewModel(
                     FingerprintReplacementPrompt(
                         profileId = profile.id,
                         profileAlias = profile.alias,
+                        host = profile.host,
+                        port = profile.port,
+                        savedFingerprint = profile.hostKeyFingerprint?.trim().orEmpty(),
                         fingerprint = fingerprintResult.value
                     )
                 }
@@ -198,17 +224,28 @@ class SshProfilesViewModel(
             is SshResult.Error -> null
         }
     }
+
+    private fun isFingerprintVerificationFailure(message: String): Boolean {
+        val normalized = message.lowercase()
+        if (normalized.contains("fingerprint mismatch")) return true
+        if (normalized.contains("verify host key")) return true
+        return normalized.contains("verify") && normalized.contains("fingerprint")
+    }
 }
 
 data class SshConnectionState(
     val connectedProfileId: Long? = null,
     val isConnecting: Boolean = false,
     val lastError: String? = null,
-    val pendingFingerprintReplacement: FingerprintReplacementPrompt? = null
+    val pendingFingerprintReplacement: FingerprintReplacementPrompt? = null,
+    val isFetchingReplacementFingerprint: Boolean = false
 )
 
 data class FingerprintReplacementPrompt(
     val profileId: Long,
     val profileAlias: String,
+    val host: String,
+    val port: Int,
+    val savedFingerprint: String,
     val fingerprint: String
 )

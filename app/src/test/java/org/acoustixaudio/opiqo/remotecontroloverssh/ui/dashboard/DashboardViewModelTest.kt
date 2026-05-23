@@ -110,8 +110,12 @@ class DashboardViewModelTest {
 
     private class FakeSshClient : SshClient {
         val executedCommands = mutableListOf<String>()
+        private var connected = false
 
-        override suspend fun connect(profile: SshProfile): SshResult<Unit> = SshResult.Success(Unit)
+        override suspend fun connect(profile: SshProfile): SshResult<Unit> {
+            connected = true
+            return SshResult.Success(Unit)
+        }
 
         override suspend fun fetchServerFingerprint(host: String, port: Int): SshResult<String> {
             return SshResult.Success("SHA256:test")
@@ -122,8 +126,11 @@ class DashboardViewModelTest {
             return SshResult.Success("")
         }
 
-        override suspend fun disconnect(): SshResult<Unit> = SshResult.Success(Unit)
+        override suspend fun disconnect(): SshResult<Unit> {
+            connected = false
+            return SshResult.Success(Unit)
+        }
 
-        override fun isConnected(): Boolean = true
+        override fun isConnected(): Boolean = connected
     }
 }

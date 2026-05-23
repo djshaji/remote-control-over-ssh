@@ -3,7 +3,9 @@ package org.acoustixaudio.opiqo.remotecontroloverssh.ui.dashboard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -63,7 +65,8 @@ fun DashboardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
@@ -172,7 +175,7 @@ private fun ConnectionControls(
                     enabled = false,
                     label = { Text(if (isConnected) "Connected" else "Disconnected") }
                 )
-                Text(status, style = MaterialTheme.typography.bodySmall)
+//                Text(status, style = MaterialTheme.typography.bodySmall)
             }
 
             if (isConnected) {

@@ -170,6 +170,24 @@ fun SshProfilesScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Connection to ${replacement.profileAlias} failed due to host key mismatch.")
                     Text(
+                        text = "Host: ${replacement.host}:${replacement.port}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Saved fingerprint:",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text(
+                        text = replacement.savedFingerprint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Server presented:",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text(
                         text = replacement.fingerprint,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
@@ -183,8 +201,22 @@ fun SshProfilesScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissFingerprintReplacementPrompt) {
-                    Text("Cancel")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        enabled = !connectionState.isFetchingReplacementFingerprint,
+                        onClick = viewModel::refetchFingerprintReplacement
+                    ) {
+                        Text(
+                            if (connectionState.isFetchingReplacementFingerprint) {
+                                "Fetching..."
+                            } else {
+                                "Fetch Again"
+                            }
+                        )
+                    }
+                    TextButton(onClick = viewModel::dismissFingerprintReplacementPrompt) {
+                        Text("Cancel")
+                    }
                 }
             }
         )
