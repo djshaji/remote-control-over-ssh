@@ -13,7 +13,4 @@ sealed class NavRoute : NavKey {
     
     @Serializable
     data class Dashboard(val remoteProfileId: Long) : NavRoute()
-    
-    @Serializable
-    data object Settings : NavRoute()
 }

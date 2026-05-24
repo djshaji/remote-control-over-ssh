@@ -159,9 +159,35 @@ class DashboardViewModel(
             return
         }
         when (val result = sshClient.executeCommand(command)) {
-            is SshResult.Success -> Unit
-            is SshResult.Error -> _messages.emit(result.message)
+            is SshResult.Success -> {
+                val output = result.value.ifBlank { "(no output)" }
+                appendTerminalEntry(command = command, output = output, isError = false)
+            }
+            is SshResult.Error -> {
+                appendTerminalEntry(command = command, output = result.message, isError = true)
+                _messages.emit(result.message)
+            }
         }
+    }
+
+    private fun appendTerminalEntry(command: String, output: String, isError: Boolean) {
+        val entry = CommandTerminalEntry(
+            command = command,
+            output = output,
+            isError = isError,
+            timestampMillis = System.currentTimeMillis()
+        )
+        _uiState.update { state ->
+            state.copy(terminalEntries = (listOf(entry) + state.terminalEntries).take(MAX_TERMINAL_ENTRIES))
+        }
+    }
+
+    companion object {
+        private const val MAX_TERMINAL_ENTRIES = 100
+    }
+
+    fun clearTerminalOutput() {
+        _uiState.update { it.copy(terminalEntries = emptyList()) }
     }
 
     override fun onCleared() {
@@ -180,5 +206,13 @@ data class DashboardUiState(
     val isConnected: Boolean = false,
     val isConnecting: Boolean = false,
     val slider1Value: Int = 0,
-    val slider2Value: Int = 0
+    val slider2Value: Int = 0,
+    val terminalEntries: List<CommandTerminalEntry> = emptyList()
+)
+
+data class CommandTerminalEntry(
+    val command: String,
+    val output: String,
+    val isError: Boolean,
+    val timestampMillis: Long
 )

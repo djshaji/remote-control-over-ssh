@@ -7,7 +7,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -76,16 +75,6 @@ fun MainApp() {
                     },
                     icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) }
                 )
-                NavigationDrawerItem(
-                    label = { Text("Settings") },
-                    selected = backStack.last() is NavRoute.Settings,
-                    onClick = {
-                        while (backStack.isNotEmpty()) backStack.removeAt(backStack.size - 1)
-                        backStack.add(NavRoute.Settings)
-                        scope.launch { drawerState.close() }
-                    },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) }
-                )
             }
         }
     ) {
@@ -127,17 +116,6 @@ fun MainApp() {
                         },
                         onBackClick = { if (backStack.size > 1) backStack.removeAt(backStack.size - 1) }
                     )
-                }
-                entry<NavRoute.Settings> {
-                    Scaffold(
-                        topBar = {
-                            CenterAlignedTopAppBar(title = { Text("Settings") })
-                        }
-                    ) { p ->
-                        Box(Modifier.padding(p).fillMaxSize()) {
-                            Text("Settings Screen", modifier = Modifier.padding(16.dp))
-                        }
-                    }
                 }
             }
         )

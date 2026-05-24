@@ -23,6 +23,11 @@ import kotlinx.coroutines.flow.collectLatest
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteCommand
 import org.acoustixaudio.opiqo.remotecontroloverssh.data.RemoteControlConfig
 import org.acoustixaudio.opiqo.remotecontroloverssh.ui.components.ConnectionStatusChip
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.style.TextOverflow
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +37,7 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var terminalExpanded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(viewModel) {
         viewModel.messages.collectLatest { message ->
@@ -76,6 +82,13 @@ fun DashboardScreen(
                 isConnecting = uiState.isConnecting,
                 onConnectClick = viewModel::onConnectClick,
                 onDisconnectClick = viewModel::onDisconnectClick
+            )
+
+            TerminalOutputCard(
+                entries = uiState.terminalEntries,
+                expanded = terminalExpanded,
+                onToggleExpanded = { terminalExpanded = !terminalExpanded },
+                onClear = viewModel::clearTerminalOutput
             )
 
             if (!uiState.isConnected) {
@@ -175,7 +188,7 @@ private fun ConnectionControls(
                     enabled = false,
                     label = { Text(if (isConnected) "Connected" else "Disconnected") }
                 )
-//                Text(status, style = MaterialTheme.typography.bodySmall)
+                Text(status, style = MaterialTheme.typography.bodySmall)
             }
 
             if (isConnected) {
@@ -359,5 +372,106 @@ fun DashboardButton(
             )
         }
         Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun TerminalOutputCard(
+    entries: List<CommandTerminalEntry>,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onClear: () -> Unit
+) {
+    val logScrollState = rememberScrollState()
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Terminal Output", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "${entries.size} entries",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (entries.isNotEmpty()) {
+                        TextButton(onClick = onClear) { Text("Clear") }
+                    }
+                    TextButton(onClick = onToggleExpanded) {
+                        Text(if (expanded) "🔼️" else "🔽️")
+                    }
+                }
+            }
+
+            if (expanded) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp, max = 260.dp),
+                    tonalElevation = 1.dp,
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    if (entries.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Text(
+                                text = "No command output yet.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(logScrollState)
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            entries.forEach { entry ->
+                                TerminalEntryItem(entry = entry)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TerminalEntryItem(entry: CommandTerminalEntry) {
+    val time = remember(entry.timestampMillis) {
+        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(entry.timestampMillis))
+    }
+    val outputColor = if (entry.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "[$time] $ ${entry.command}",
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = entry.output,
+            style = MaterialTheme.typography.bodySmall,
+            color = outputColor
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
